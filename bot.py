@@ -14,20 +14,61 @@ REAL_API_URL = "https://tg-to-number-number-nitin.vercel.app/api"
 OWNER_HANDLE = "@RD3B4T"
 CHANNEL_LINK = "https://t.me/RD3B4T"
 
+# ==========================================
+# OWNER CONFIGURATION
+# ==========================================
+OWNER_ID = 8600328303  # Aapki Owner ID (Aapko har jagah full access milega)
+
+async def has_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user = update.effective_user
+    if not user:
+        return False
+    
+    # 1. Owner ko hamesha aur har jagah access milega (PM & Groups)
+    if user.id == OWNER_ID:
+        return True
+    
+    chat = update.effective_chat
+    # 2. Agar bot group mein use ho raha hai, toh check karo ki user us group ka admin hai ya nahi
+    if chat.type in ["group", "supergroup"]:
+        try:
+            member = await context.bot.get_chat_member(chat.id, user.id)
+            if member.status in ["creator", "administrator"]:
+                return True
+        except Exception as e:
+            logger.error(f"Error checking group admin status: {e}")
+            
+    return False
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await update.message.reply_text(
         f"👋 Hello {user.first_name}!\n\n"
-        f"🤖 **Telegram to Number Bot** is live.\n"
-        f"Send any Phone Number or Telegram ID directly, or use:\n"
-        f"`/search <number_or_id>`\n\n"
+        f"🔍 **TG ID / Username to Number Bot**\n"
+        f"Koi bhi **Telegram ID** ya **Username** bhein:\n\n"
+        f"• **Example 1:** `8600328303` (TG ID)\n"
+        f"• **Example 2:** `@RD3B4T` (Username)\n\n"
+        f"📌 Command use karein:\n"
+        f"`/search <telegram_id_or_username>`\n\n"
         f"👑 **Developer:** {OWNER_HANDLE}\n"
         f"📢 **Channel:** {CHANNEL_LINK}",
         parse_mode="Markdown"
     )
 
-async def handle_search(query: str, update: Update):
-    processing_msg = await update.message.reply_text("🔍 Searching database, please wait...")
+async def handle_lookup(query: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Access verification check
+    if not await has_access(update, context):
+        await update.message.reply_text(
+            "⛔️ **Access Denied!**\n\n"
+            "Yeh bot sirf Group Admins ya Owner ke liye accessible hai. "
+            "Isse use karne ke liye group ka admin hona zaroori hai.",
+            parse_mode="Markdown"
+        )
+        return
+
+    query = query.strip()
+    processing_msg = await update.message.reply_text(f"🔍 Searching records for: `{query}`...", parse_mode="Markdown")
+    
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(REAL_API_URL, params={"search": query})
@@ -35,12 +76,12 @@ async def handle_search(query: str, update: Update):
                 data = response.json()
             else:
                 data = {
-                    "location": {"country": "India", "country_code": "+91", "phone_number": query},
-                    "userid_info": {"name": f"User {query}", "telegram_id": query, "username": "N/A"},
+                    "location": {"country": "India", "country_code": "+91", "phone_number": "Not Found"},
+                    "userid_info": {"name": f"User {query}", "telegram_id": query, "username": query.lstrip("@")},
                     "metadata": {"owner": OWNER_HANDLE, "channel": CHANNEL_LINK}
                 }
         
-        # Metadata update with custom owner and channel
+        # Enforce custom owner and channel branding
         if "metadata" in data:
             data["metadata"]["owner"] = OWNER_HANDLE
             data["metadata"]["channel"] = CHANNEL_LINK
@@ -56,7 +97,7 @@ async def handle_search(query: str, update: Update):
         meta = data.get("metadata", {})
 
         result_text = (
-            f"✅ **Result Found!**\n\n"
+            f"✅ **Lookup Successful!**\n\n"
             f"👤 **Name:** {user_info.get('name', 'N/A')}\n"
             f"🆔 **Telegram ID:** `{user_info.get('telegram_id', 'N/A')}`\n"
             f"🔗 **Username:** @{user_info.get('username', 'N/A')}\n"
@@ -69,20 +110,21 @@ async def handle_search(query: str, update: Update):
         await processing_msg.edit_text(result_text, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Error: {e}")
-        await processing_msg.edit_text("❌ An error occurred while fetching data. Please try again later.")
+        await processing_msg.edit_text("❌ Failed to fetch data from the database. Please try again later.")
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args:
-        await update.message.reply_text("⚠️ Please provide a query.\nExample: `/search 9235307936`", parse_mode="Markdown")
+        await update.message.reply_text("⚠️ Please provide a Telegram ID or Username.\nExample: `/search @username`", parse_mode="Markdown")
         return
-    await handle_search(args[0], update)
+    query = " ".join(args)
+    await handle_lookup(query, update, context)
 
 async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     if text.startswith("/"):
         return
-    await handle_search(text, update)
+    await handle_lookup(text, update, context)
 
 def main():
     if not BOT_TOKEN:
@@ -100,3 +142,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+            
