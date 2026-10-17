@@ -9,16 +9,16 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configured Bot Token & Constants
-BOT_TOKEN = "8957069742:AAGpYB87QZ6G7UPzwMl4eRoqbVoWyci0bg8"
-REAL_API_URL = "https://tg-to-number-number-nitin.vercel.app/api"
+# Configured Bot Token & Constants via Environment Variables
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+REAL_API_URL = os.environ.get("REAL_API_URL", "https://tg-to-number-number-nitin.vercel.app/api")
 OWNER_HANDLE = "@RD3B4T"
 CHANNEL_LINK = "https://t.me/RD3B4T"
 
 # ==========================================
 # OWNER CONFIGURATION
 # ==========================================
-OWNER_ID = 6081767690  # Updated Owner ID
+OWNER_ID = int(os.environ.get("OWNER_ID", "6081767690"))
 
 async def has_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.effective_user
@@ -130,8 +130,7 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 def main():
     if not BOT_TOKEN:
-        print("Error: BOT_TOKEN is missing.")
-        return
+        raise RuntimeError("BOT_TOKEN environment variable is missing!")
 
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -140,16 +139,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
 
     print("🤖 Telegram bot is running...")
-    
-    # Event loop fix for modern Python / Render environment
-    try:
-        asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
-    
