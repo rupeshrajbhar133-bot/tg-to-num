@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 import httpx
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
@@ -12,24 +13,24 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = "8957069742:AAGpYB87QZ6G7UPzwMl4eRoqbVoWyci0bg8"
 REAL_API_URL = "https://tg-to-number-number-nitin.vercel.app/api"
 OWNER_HANDLE = "@RD3B4T"
-CHANNEL_LINK = "https://t.me/RD3BOT2"
+CHANNEL_LINK = "https://t.me/RD3B4T"
 
 # ==========================================
 # OWNER CONFIGURATION
 # ==========================================
-OWNER_ID = 6081767690  # Aapki Owner ID
+OWNER_ID = 6081767690  # Updated Owner ID
 
 async def has_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.effective_user
     if not user:
         return False
     
-    # 1. Owner ko hamesha access milega
+    # 1. Owner access
     if user.id == OWNER_ID:
         return True
     
     chat = update.effective_chat
-    # 2. Group mein admin check
+    # 2. Group Admin access
     if chat.type in ["group", "supergroup"]:
         try:
             member = await context.bot.get_chat_member(chat.id, user.id)
@@ -60,8 +61,7 @@ async def handle_lookup(query: str, update: Update, context: ContextTypes.DEFAUL
     if not await has_access(update, context):
         await update.message.reply_text(
             "⛔️ **Access Denied!**\n\n"
-            "Yeh bot sirf Group Admins ya Owner ke liye accessible hai. "
-            "Isse use karne ke liye group ka admin hona zaroori hai.",
+            "Yeh bot sirf Group Admins ya Owner ke liye accessible hai.",
             parse_mode="Markdown"
         )
         return
@@ -73,49 +73,46 @@ async def handle_lookup(query: str, update: Update, context: ContextTypes.DEFAUL
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(REAL_API_URL, params={"search": query})
             
-            # Agar API response 200 OK na ho
+            # API Error Check
             if response.status_code != 200:
-                await processing_msg.edit_text("❌ **API Server Error!** Backend database mein problem hai ya server down hai.")
+                await processing_msg.edit_text("❌ **Server Error:** Backend API response nahi de rahi hai.")
                 return
-            
+
             data = response.json()
             
-            # Agar API khud error return kare
+            # Internal Error Check
             if "error" in data:
-                err_msg = data.get("error", "Internal server error")
-                await processing_msg.edit_text(f"❌ **API Error:** {err_msg}")
+                await processing_msg.edit_text(f"❌ **Error:** {data.get('error')}")
                 return
 
-        # Enforce custom owner and channel branding
-        if "metadata" not in data:
-            data["metadata"] = {}
-        data["metadata"]["owner"] = OWNER_HANDLE
-        data["metadata"]["channel"] = CHANNEL_LINK
-        
+        # Extract Info
         loc = data.get("location", {})
         user_info = data.get("userid_info", {})
-        meta = data.get("metadata", {})
 
-        phone_number = loc.get('phone_number', 'Not Found')
-        if phone_number == "Not Found" or not phone_number:
-            await processing_msg.edit_text(f"❌ **Record Not Found!** Is ID ya Username ka koi data database mein nahi mila.")
+        phone = loc.get("phone_number")
+        
+        # Fake / Duplicate Data Filter
+        if not phone or phone == query or phone == "Not Found":
+            await processing_msg.edit_text("❌ **No Record Found!** Is Telegram ID/Username ka koi data database mein nahi mila.")
             return
 
+        # Requirement Format Output
         result_text = (
-            f"✅ **Lookup Successful!**\n\n"
+            f"✅ **Result Found!**\n\n"
             f"👤 **Name:** {user_info.get('name', 'N/A')}\n"
-            f"🆔 **Telegram ID:** `{user_info.get('telegram_id', 'N/A')}`\n"
+            f"🆔 **Telegram ID:** `{user_info.get('telegram_id', query)}`\n"
             f"🔗 **Username:** @{user_info.get('username', 'N/A')}\n"
-            f"📞 **Phone Number:** `{phone_number}`\n"
+            f"📞 **Phone Number:** `{phone}`\n"
             f"🌍 **Country:** {loc.get('country', 'India')} ({loc.get('country_code', '+91')})\n\n"
             f"━━━━━━━━━━━━━━━━━━━\n"
-            f"👑 **Owner:** {meta.get('owner', OWNER_HANDLE)}\n"
-            f"📢 **Channel:** {meta.get('channel', CHANNEL_LINK)}"
+            f"👑 **Owner:** {OWNER_HANDLE}\n"
+            f"📢 **Channel:** {CHANNEL_LINK}"
         )
         await processing_msg.edit_text(result_text, parse_mode="Markdown")
+
     except Exception as e:
         logger.error(f"Error: {e}")
-        await processing_msg.edit_text("❌ Failed to fetch data from the database. Please try again later.")
+        await processing_msg.edit_text("❌ Failed to fetch data from database.")
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
@@ -143,8 +140,16 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
 
     print("🤖 Telegram bot is running...")
+    
+    # Event loop fix for modern Python / Render environment
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     app.run_polling()
 
 if __name__ == "__main__":
     main()
-  
+    
